@@ -43,6 +43,13 @@ func TestMaskDetectsTypes(t *testing.T) {
 		{"fio_no_marker", "меня зовут пётр воробьёв", []string{"FIO"}},
 		{"fio_inflected", "перевод для сергея петрова", []string{"FIO"}},
 		{"fio_patronymic_bridge", "гагарян ашот арутюнович", []string{"FIO"}},
+		// Вариации телефона и ПИН (регрессии по багам из UI).
+		{"phone_no_plus", "номер телефона 7 999 123-45-67", []string{"PHONE"}},
+		{"phone_parens", "тел +7 (999) 999-99-99", []string{"PHONE"}},
+		{"phone_double_dash", "звоните 8 (999) 123--45-67", []string{"PHONE"}},
+		{"phone_solid", "89991234567", []string{"PHONE"}},
+		{"pin_with_word", "пин-код карты 4321", []string{"PIN"}},
+		{"driver_declined", "серия и номер водительского удостоверения 77 АА 123456", []string{"DRIVER"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

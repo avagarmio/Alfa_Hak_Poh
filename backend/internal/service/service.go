@@ -67,7 +67,7 @@ func NewService(c *cache.ShardedCache) *Service {
 	s.detectors = []detector{
 		// Контакты
 		{re: regexp.MustCompile(`(?i)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`), typ: "EMAIL"},
-		{re: regexp.MustCompile(`(?:\+7|8)[\s\-]?(?:\(?\d{3}\)?[\s\-]?)\d{3}[\s\-]?\d{2}[\s\-]?\d{2}`), typ: "PHONE"},
+		{re: regexp.MustCompile(`(?:\+?[78])[\s\-.]*\(?\d{3}\)?[\s\-.]*\d{3}[\s\-.]*\d{2}[\s\-.]*\d{2}`), typ: "PHONE"},
 
 		// Паспорт: слитно (4509 123456) и с разделителями (серия 4509 номер 123456)
 		{re: regexp.MustCompile(`(?i)(?:паспорт\s*(?:рф)?[^\d]*?)?(\b\d{2}\s*\d{2}\s*\d{6}\b)`), typ: "PASSPORT", groups: []int{1}},
@@ -82,12 +82,12 @@ func NewService(c *cache.ShardedCache) *Service {
 		{re: regexp.MustCompile(`(?i)\b\d{1,2}\s+(?:январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)[а-яё]*\s+\d{2,4}(?:\s*г(?:ода|\.)?)?`), typ: "DATE"},
 
 		// Документы
-		{re: regexp.MustCompile(`(?i)(?:водительское|в/у|удостоверение)[^\d]*?(\b\d{2}\s*(?:\d{2}|[А-ЯA-Z]{2})\s*\d{6}\b)`), typ: "DRIVER", groups: []int{1}},
+		{re: regexp.MustCompile(`(?i)(?:водительск[а-яё]*|в/у|удостоверени[а-яё]*)[^\d]*?(\b\d{2}\s*(?:\d{2}|[А-ЯA-Z]{2})\s*\d{6}\b)`), typ: "DRIVER", groups: []int{1}},
 		{re: regexp.MustCompile(`(?i)(?:инн)[^\d]{1,5}(\b\d{10}\b|\b\d{12}\b)`), typ: "INN", groups: []int{1}},
 
 		// Реквизиты карты
 		{re: regexp.MustCompile(`(?i)(?:cvv|cvc|код)[^\d]{1,5}(\b\d{3}\b)`), typ: "CVV", groups: []int{1}},
-		{re: regexp.MustCompile(`(?i)(?:пин|pin)(?:-?код)?[^\d]{1,5}(\b\d{4}\b)`), typ: "PIN", groups: []int{1}},
+		{re: regexp.MustCompile(`(?i)(?:пин|pin)(?:[\s\-]?код)?[^\d]{0,12}(\b\d{4}\b)`), typ: "PIN", groups: []int{1}},
 		// Имя держателя карты (латиница)
 		{re: regexp.MustCompile(`\b([A-Z]{2,}\s+[A-Z]{2,}(?:\s+[A-Z]{2,})?)\b`), typ: "CARD_HOLDER", groups: []int{1}},
 
