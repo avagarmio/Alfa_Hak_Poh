@@ -3,3 +3,6 @@ frontend/dist/
 .DS_Store
 .env
 .env.*
+
+backend/bin/
+*.tsbuildinfo
