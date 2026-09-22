@@ -1,8 +1,14 @@
+# Frontend
 frontend/node_modules/
 frontend/dist/
 .DS_Store
 .env
 .env.*
 
+# Backend
 backend/bin/
 *.tsbuildinfo
+
+# ТЗ, архив сдачи — не коммитить
+for_agent
+solution.zip
