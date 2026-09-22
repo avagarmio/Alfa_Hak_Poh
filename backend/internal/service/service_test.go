@@ -53,6 +53,9 @@ func TestMaskDetectsTypes(t *testing.T) {
 		{"authority_ruvd", "выдан Первомайским РУВД г. Москва", []string{"PASS_AUTHORITY"}},
 		{"date_spelled_day", "дата рождения первое мая 1990 г.", []string{"DATE"}},
 		{"date_full_spelled", "двадцать пятое декабря две тысячи пятнадцатого года", []string{"DATE"}},
+		{"date_abbrev_month", "дата рождения 27 янв 1980", []string{"DATE"}},
+		{"passport_spaced_number", "паспорт серия 46 11 № 890 123", []string{"PASSPORT"}},
+		{"inn_far_word", "ИНН субъекта: 504212345678", []string{"INN"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
