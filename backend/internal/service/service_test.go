@@ -50,6 +50,9 @@ func TestMaskDetectsTypes(t *testing.T) {
 		{"phone_solid", "89991234567", []string{"PHONE"}},
 		{"pin_with_word", "пин-код карты 4321", []string{"PIN"}},
 		{"driver_declined", "серия и номер водительского удостоверения 77 АА 123456", []string{"DRIVER"}},
+		{"authority_ruvd", "выдан Первомайским РУВД г. Москва", []string{"PASS_AUTHORITY"}},
+		{"date_spelled_day", "дата рождения первое мая 1990 г.", []string{"DATE"}},
+		{"date_full_spelled", "двадцать пятое декабря две тысячи пятнадцатого года", []string{"DATE"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
