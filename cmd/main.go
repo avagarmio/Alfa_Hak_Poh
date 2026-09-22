@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"llm-proxy/internal/config"
+	"llm-proxy/internal/metrics"
 	"llm-proxy/internal/repository/cache"
 	"llm-proxy/internal/service"
 	transporthttp "llm-proxy/internal/transport/http"
@@ -21,8 +22,9 @@ func main() {
 
 	appCache := cache.NewShardedCache()
 	svc := service.NewService(appCache)
-	handler := transporthttp.NewHandler(svc)
-	router := transporthttp.SetupRouter(handler)
+	handler := transporthttp.NewHandler(svc, cfg)
+	mc := metrics.New()
+	router := transporthttp.SetupRouter(handler, mc)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
