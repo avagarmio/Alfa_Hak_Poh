@@ -2,6 +2,8 @@ package http
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"llm-proxy/internal/config"
 	"llm-proxy/internal/metrics"
@@ -77,5 +79,24 @@ func SetupRouter(h *Handler, m *metrics.Collector) *gin.Engine {
 	r.Use(RateLimitMiddleware())
 
 	r.POST("/process", h.Process)
+
+	frontendDir := "frontend_dist"
+
+	if _, err := os.Stat(frontendDir); err == nil {
+		r.Static("/assets", filepath.Join(frontendDir, "assets"))
+
+		r.GET("/", func(c *gin.Context) {
+			c.File(filepath.Join(frontendDir, "index.html"))
+		})
+
+		r.NoRoute(func(c *gin.Context) {
+			if c.Request.Method != http.MethodGet {
+				c.Status(http.StatusNotFound)
+				return
+			}
+
+			c.File(filepath.Join(frontendDir, "index.html"))
+		})
+	}
 	return r
 }
