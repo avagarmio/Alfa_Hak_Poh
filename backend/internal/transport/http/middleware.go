@@ -28,20 +28,20 @@ func RecoveryMiddleware() gin.HandlerFunc {
 	}
 }
 
-// MetricsMiddleware измеряет задержку, статус и объём (токены ≈ payload_bytes/4)
-// каждого запроса. Содержимое payload не читается и не логируется.
-func MetricsMiddleware(m *metrics.Collector) gin.HandlerFunc {
+func MetricsMiddleware(m *metrics.Metrics) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		m.IncInFlight()
+		defer m.DecInFlight()
+
 		start := time.Now()
 
 		c.Next()
 
-		m.DecInFlight()
 		var tokens int64
 		if cl := c.Request.ContentLength; cl > 0 {
 			tokens = cl / 4
 		}
+
 		m.Observe(time.Since(start), c.Writer.Status(), tokens)
 	}
 }

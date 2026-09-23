@@ -11,6 +11,7 @@ import (
 	"llm-proxy/internal/types"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Handler struct {
@@ -61,19 +62,13 @@ func (h *Handler) resolveOptions(c *gin.Context) (service.ProcessOptions, bool) 
 	return service.ProcessOptions{MaskTypes: maskTypes, DemaskEnabled: rule.DemaskEnabled}, true
 }
 
-func SetupRouter(h *Handler, m *metrics.Collector) *gin.Engine {
+func SetupRouter(h *Handler, m *metrics.Metrics) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 
-	// Recovery применяется ко всем маршрутам.
 	r.Use(RecoveryMiddleware())
 
-	// /metrics регистрируется ДО metrics/ratelimit middleware, поэтому не
-	// учитывается в собственных метриках и отвечает даже под перегрузкой.
-	r.GET("/metrics", func(c *gin.Context) {
-		c.Header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		m.WritePrometheus(c.Writer)
-	})
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.Use(MetricsMiddleware(m))
 	r.Use(RateLimitMiddleware())
@@ -81,7 +76,6 @@ func SetupRouter(h *Handler, m *metrics.Collector) *gin.Engine {
 	r.POST("/process", h.Process)
 
 	frontendDir := "frontend_dist"
-
 	if _, err := os.Stat(frontendDir); err == nil {
 		r.Static("/assets", filepath.Join(frontendDir, "assets"))
 
@@ -94,9 +88,9 @@ func SetupRouter(h *Handler, m *metrics.Collector) *gin.Engine {
 				c.Status(http.StatusNotFound)
 				return
 			}
-
 			c.File(filepath.Join(frontendDir, "index.html"))
 		})
 	}
+
 	return r
 }

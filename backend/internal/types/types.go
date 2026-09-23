@@ -15,6 +15,7 @@ type SessionState struct {
 	OriginalText string
 	MaskedText   string
 	ExpiresAt    time.Time
+	Mapping      map[string]string
 }
 
 type Span struct {

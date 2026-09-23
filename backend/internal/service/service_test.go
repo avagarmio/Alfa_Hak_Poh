@@ -59,7 +59,7 @@ func TestMaskDetectsTypes(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, detected := s.Mask(c.input, nil)
+			_, detected, _ := s.Mask(c.input, nil)
 			got := typeSet(detected)
 			for _, w := range c.want {
 				if !got[w] {
@@ -74,19 +74,16 @@ func TestMaskDetectsTypes(t *testing.T) {
 
 func TestMaskFalsePositives(t *testing.T) {
 	s := newSvc()
-	// Публичная личность и топоним/юрлицо не должны маскироваться.
 	cases := []string{
 		"Поэт Александр Пушкин",
 		"Заседание в Москва Сити",
 		"Компания ООО Ромашка",
-		// Слова с «фамильными» окончаниями, но не ПД (морфология не должна ловить).
 		"оплатил бензин на заправке",
 		"купил молоко и картину",
 		"директор уехал в магазин",
 	}
 	for _, in := range cases {
-		out, _ := s.Mask(in, nil)
-		// Хотя бы одно ключевое слово должно остаться нетронутым (без '*').
+		out, _, _ := s.Mask(in, nil)
 		key := strings.Fields(in)[len(strings.Fields(in))-1]
 		if !strings.Contains(out, key) {
 			t.Errorf("ложное срабатывание: %q -> %q (слово %q замаскировано)", in, out, key)
@@ -97,12 +94,15 @@ func TestMaskFalsePositives(t *testing.T) {
 func TestMaskEmptyAndNoPD(t *testing.T) {
 	s := newSvc()
 	for _, in := range []string{"", "обычный текст без пд", "просто предложение."} {
-		out, detected := s.Mask(in, nil)
+		out, detected, mapping := s.Mask(in, nil)
 		if out != in {
 			t.Errorf("Mask(%q) изменил строку без ПД: %q", in, out)
 		}
 		if detected != nil {
 			t.Errorf("Mask(%q): ожидался nil-список типов, получено %v", in, detected)
+		}
+		if mapping != nil {
+			t.Errorf("Mask(%q): ожидался nil-mapping, получено %v", in, mapping)
 		}
 	}
 }
@@ -112,16 +112,17 @@ func TestMaskEmptyAndNoPD(t *testing.T) {
 func TestMaskAllowedTypesFilter(t *testing.T) {
 	s := newSvc()
 	in := "Иванов Иван, тел +7 999 123-45-67, почта a@b.ru"
-	// Разрешаем только телефон.
-	out, detected := s.Mask(in, map[string]struct{}{"PHONE": {}})
+
+	out, detected, _ := s.Mask(in, map[string]struct{}{"PHONE": {}})
 	got := typeSet(detected)
 	if !got["PHONE"] {
 		t.Errorf("PHONE должен быть найден, получено %v", detected)
 	}
+
 	if got["FIO"] || got["EMAIL"] {
 		t.Errorf("при фильтре PHONE не должно быть FIO/EMAIL, получено %v", detected)
 	}
-	// Почта и имя остаются в открытом виде.
+
 	if !strings.Contains(out, "a@b.ru") {
 		t.Errorf("email не должен маскироваться при фильтре PHONE: %q", out)
 	}
@@ -141,14 +142,25 @@ func TestProcessRoundTrip(t *testing.T) {
 		t.Fatalf("прямой шаг не замаскировал строку")
 	}
 
+	// 1. Идемпотентность повторного прямого запроса
 	retry := s.Process(types.ProcessRequest{Payload: orig, PayloadID: "id-1"}, DefaultOptions())
 	if retry != masked {
 		t.Errorf("идемпотентность нарушена: %q != %q", retry, masked)
 	}
 
+	// 2. Демаскирование при полном возврате маскированной строки
 	back := s.Process(types.ProcessRequest{Payload: masked, PayloadID: "id-1"}, DefaultOptions())
 	if back != orig {
 		t.Errorf("демаскирование не восстановило оригинал:\n  want %q\n  got  %q", orig, back)
+	}
+
+	// 3. Реальный сценарий LLM: модель генерирует совершенно новый ответ с подставленными токенами
+	llmResponse := "Операция успешно одобрена для [FIO_1] по карте [CARD_1] (паспорт [PASSPORT_1])."
+	wantDemasked := "Операция успешно одобрена для Иванов Иван по карте 4539 1488 0343 6467 (паспорт 4509 123456)."
+
+	demaskedResp := s.Process(types.ProcessRequest{Payload: llmResponse, PayloadID: "id-1"}, DefaultOptions())
+	if demaskedResp != wantDemasked {
+		t.Errorf("демаскирование сгенерированного ответа LLM не удалось:\n  want %q\n  got  %q", wantDemasked, demaskedResp)
 	}
 }
 
@@ -197,8 +209,7 @@ func TestIsValidLuhn(t *testing.T) {
 
 func TestCardOnlyValidLuhnMasked(t *testing.T) {
 	s := newSvc()
-	// Невалидный по Луну номер не маскируется.
-	out, detected := s.Mask("оплата 4276 3800 1234 5678", nil)
+	out, detected, _ := s.Mask("оплата 4276 3800 1234 5678", nil)
 	if typeSet(detected)["CARD"] {
 		t.Errorf("невалидная карта не должна детектироваться: %v", detected)
 	}
@@ -257,7 +268,27 @@ func TestMergeSpans(t *testing.T) {
 	}
 }
 
-// --- Бенчмарк на большом тексте (ориентир ТЗ: до 100 000 токенов) ---
+// --- Тест маскирования звездочками (UI / Audit) ---
+
+func TestMaskAsterisks(t *testing.T) {
+	s := newSvc()
+	in := "тел +7 999 123-45-67"
+	out, detected := s.MaskAsterisks(in, nil)
+
+	if !typeSet(detected)["PHONE"] {
+		t.Fatalf("PHONE не найден: %v", detected)
+	}
+
+	// Разделители и плюсы должны остаться
+	if !strings.Contains(out, "+") || !strings.Contains(out, "-") {
+		t.Errorf("разделители были затерты: %q", out)
+	}
+	if !strings.Contains(out, "*") {
+		t.Errorf("символы не были замаскированы: %q", out)
+	}
+}
+
+// --- Бенчмарк на большом тексте ---
 
 func BenchmarkMaskLarge(b *testing.B) {
 	s := newSvc()
