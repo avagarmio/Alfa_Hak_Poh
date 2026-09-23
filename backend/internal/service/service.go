@@ -94,13 +94,13 @@ func NewService(c *cache.ShardedCache) *Service {
 
 		// Документы
 		{re: regexp.MustCompile(`(?i)(?:водительск[а-яё]*|в/у|удостоверени[а-яё]*)[^\d]*?(\b\d{2}\s*(?:\d{2}|[А-ЯA-Z]{2})\s*\d{6}\b)`), typ: "DRIVER", groups: []int{1}},
-		{re: regexp.MustCompile(`(?i)(?:инн)[^\d]{0,15}(\b\d{10}\b|\b\d{12}\b)`), typ: "INN", groups: []int{1}},
+		{re: regexp.MustCompile(`(?i)(?:инн)[^\d]{0,15}(\d{10}\b|\d{12}\b)`), typ: "INN", groups: []int{1}},
 
 		// Реквизиты карты
-		{re: regexp.MustCompile(`(?i)(?:cvv|cvc|код)[^\d]{1,5}(\b\d{3}\b)`), typ: "CVV", groups: []int{1}},
+		{re: regexp.MustCompile(`(?i)(?:cvv|cvc|код)[^\d]{0,5}(\d{3}\b)`), typ: "CVV", groups: []int{1}},
 		// CVV без ключевого слова: 3 цифры сразу после срока действия (MM/YY 876)
 		{re: regexp.MustCompile(`(?:0[1-9]|1[0-2])[./\-]\d{2,4}\s+(\d{3})\b`), typ: "CVV", groups: []int{1}},
-		{re: regexp.MustCompile(`(?i)(?:пин|pin)(?:[\s\-]?код)?[^\d]{0,12}(\b\d{4}\b)`), typ: "PIN", groups: []int{1}},
+		{re: regexp.MustCompile(`(?i)(?:пин|pin)(?:[\s\-]?код)?[^\d]{0,12}(\d{4}\b)`), typ: "PIN", groups: []int{1}},
 		{re: regexp.MustCompile(`\b([A-Z]{2,}\s+[A-Z]{2,}(?:\s+[A-Z]{2,})?)\b`), typ: "CARD_HOLDER", groups: []int{1}},
 
 		// Место рождения и гражданство
