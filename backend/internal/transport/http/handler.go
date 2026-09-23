@@ -1,6 +1,7 @@
 package http
 
 import (
+	_ "embed"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+//go:embed openapi.yaml
+var openapiSpec []byte
 
 type Handler struct {
 	svc *service.Service
@@ -74,10 +78,14 @@ func SetupRouter(h *Handler, m *metrics.Metrics) *gin.Engine {
 
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
+	r.GET("/openapi.yaml", func(c *gin.Context) {
+		c.Data(http.StatusOK, "application/yaml; charset=utf-8", openapiSpec)
+	})
+
 	r.Use(MetricsMiddleware(m))
 	r.Use(RateLimitMiddleware())
 
-	r.POST("/process", h.Process)
+	r.POST("/process", CircuitGuardMiddleware(h.cfg.MaxConsecutiveErrors), h.Process)
 
 	frontendDir := "frontend_dist"
 	if _, err := os.Stat(frontendDir); err == nil {

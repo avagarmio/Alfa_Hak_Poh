@@ -1,0 +1,91 @@
+openapi: 3.0.3
+info:
+  title: Модуль безопасности ПД — контракт /process
+  version: "1.0.0"
+  description: |
+    Единый контракт маскирования/демаскирования персональных данных.
+    Логика прямого (маскирование) и обратного (демаскирование) шага
+    коррелируется по ключу payload_id:
+      * Первый запрос с новым payload_id: в payload — исходный текст,
+        сервис возвращает замаскированный результат и запоминает пару.
+      * Второй запрос с тем же payload_id: в payload — ранее выданная маска,
+        сервис возвращает исходный текст.
+    Идемпотентность по payload_id обязательна (до 3 попыток на запрос).
+servers:
+  - url: http://localhost:8080
+    description: Локальный запуск
+  - url: https://your-solution.example.com
+    description: HTTPS (self-signed допускается, проверка с ssl_verify=false)
+paths:
+  /process:
+    post:
+      operationId: process
+      summary: Маскирование/демаскирование строки (корреляция по payload_id)
+      parameters:
+        - in: header
+          name: X-System-ID
+          required: false
+          schema:
+            type: string
+          description: >
+            Идентификатор системы-потребителя. Требуется только при включённом
+            контроле доступа (auth_enabled=true); иначе игнорируется.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessRequest"
+      responses:
+        "200":
+          description: Успешная обработка
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessResponse"
+        "400":
+          description: Невалидное тело запроса (нет payload или payload_id)
+        "403":
+          description: Система-потребитель не зарегистрирована или отключена
+        "429":
+          description: Слишком много запросов. Возвращается заголовок Retry-After.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Через сколько секунд повторить запрос
+        "500":
+          description: Внутренняя ошибка сервиса
+  /metrics:
+    get:
+      operationId: metrics
+      summary: Технические метрики в формате Prometheus (Latency/RPS/TPS)
+      responses:
+        "200":
+          description: Метрики
+          content:
+            text/plain:
+              schema:
+                type: string
+components:
+  schemas:
+    ProcessRequest:
+      type: object
+      required: [payload, payload_id]
+      properties:
+        payload:
+          type: string
+          description: Исходная строка (шаг 1) либо ранее замаскированная (шаг 2).
+          example: "Клиент Иванов Иван Иванович, паспорт 4509 123456"
+        payload_id:
+          type: string
+          description: Идентификатор корреляции пары маскирование/демаскирование.
+          example: "8a77d363c7c044b49b41d7b8a448243a"
+    ProcessResponse:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: string
+          description: Результат обработки.
+          example: "Клиент [FIO_1], паспорт [PASSPORT_1]"

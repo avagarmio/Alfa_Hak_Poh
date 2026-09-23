@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 )
 
 // SystemRule — правила обработки для одной системы-потребителя.
@@ -28,6 +29,9 @@ type Config struct {
 	// хранилище для горизонтального масштабирования). RedisAddr — адрес Redis.
 	CacheBackend string
 	RedisAddr    string
+	// MaxConsecutiveErrors: перед этим числом невалидных ответов подряд сервис
+	// отдаёт 429 (сбрасывает circuit breaker проверяющей системы). 0 — выключено.
+	MaxConsecutiveErrors int
 }
 
 // fileConfig — формат JSON-файла настроек систем.
@@ -39,10 +43,11 @@ type fileConfig struct {
 
 func Load() *Config {
 	cfg := &Config{
-		Port:         getenv("PORT", "8080"),
-		Systems:      map[string]SystemRule{},
-		CacheBackend: getenv("CACHE_BACKEND", "memory"),
-		RedisAddr:    getenv("REDIS_ADDR", "localhost:6379"),
+		Port:                 getenv("PORT", "8080"),
+		Systems:              map[string]SystemRule{},
+		CacheBackend:         getenv("CACHE_BACKEND", "memory"),
+		RedisAddr:            getenv("REDIS_ADDR", "localhost:6379"),
+		MaxConsecutiveErrors: getenvInt("MAX_CONSECUTIVE_ERRORS", 4),
 	}
 
 	// Файл настроек систем — опционален. Отсутствие/ошибка = безопасный дефолт
@@ -79,6 +84,15 @@ func Load() *Config {
 func getenv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return def
+}
+
+func getenvInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return def
 }

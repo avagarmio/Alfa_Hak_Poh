@@ -50,14 +50,19 @@ func TestCompositeMasking(t *testing.T) {
 		t.Errorf("composite off: PIN должен маскироваться в одиночку, получено %v", d)
 	}
 
-	// composite=on: пин без карты — не маскируется; с картой (даже словом) — да.
+	// composite=on: PIN маскируется только при наличии НОМЕРА карты, не слова.
 	on := NewService(cache.NewShardedCache())
 	on.SetCompositeMasking(true)
+	// «пин-код карты» — только слово «карты», номера нет → НЕ маскируем.
+	if _, d, _ := on.Mask("пин-код карты 4321", nil); has(d, "PIN") {
+		t.Errorf("composite on: PIN без номера карты не должен маскироваться, получено %v", d)
+	}
 	if _, d, _ := on.Mask("введите пин-код 1234", nil); has(d, "PIN") {
 		t.Errorf("composite on: PIN без карты не должен маскироваться, получено %v", d)
 	}
-	if _, d, _ := on.Mask("карта, пин-код 4321", nil); !has(d, "PIN") {
-		t.Errorf("composite on: PIN при наличии карты должен маскироваться, получено %v", d)
+	// «пин-код карты + номер карты» → маскируем.
+	if _, d, _ := on.Mask("пин-код карты 4321, номер карты 4539 1488 0343 6467", nil); !has(d, "PIN") {
+		t.Errorf("composite on: PIN при номере карты должен маскироваться, получено %v", d)
 	}
 	if _, d, _ := on.Mask("оплата 5536913790312149 и пин 4321", nil); !has(d, "PIN") {
 		t.Errorf("composite on: PIN при карто-подобном номере должен маскироваться, получено %v", d)

@@ -592,19 +592,17 @@ func (s *Service) collectSpans(input string, allowed map[string]struct{}) ([]typ
 	return spans, detected
 }
 
-var reCardWord = regexp.MustCompile(`(?i)карт[аеыуой]`)
-
 // filterComposite убирает спаны условных типов, у которых в тексте нет якоря
 // (напр. PIN без CARD). Проверка на уровне всего текста, не по близости.
-// Якорь CARD считается присутствующим при валидной карте, любом карто-подобном
-// номере (13–19 цифр) или слове «карт…» — чтобы не терять маску из-за невалидной
-// по Луну карты.
+// Якорь CARD — это ИДЕНТИФИЦИРОВАННЫЙ номер карты (валидная CARD или карто-подобная
+// последовательность 13–19 цифр). Одно лишь слово «карта» якорем НЕ считается:
+// «пин-код карты» само по себе содержит «карты», но номера карты там нет.
 func (s *Service) filterComposite(input string, spans []types.Span) []types.Span {
 	present := make(map[string]bool, len(spans))
 	for _, sp := range spans {
 		present[sp.Type] = true
 	}
-	if !present["CARD"] && (s.reCard.MatchString(input) || reCardWord.MatchString(input)) {
+	if !present["CARD"] && s.reCard.MatchString(input) {
 		present["CARD"] = true
 	}
 	out := spans[:0]
