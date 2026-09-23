@@ -11,9 +11,15 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"llm-proxy/internal/repository/cache"
 	"llm-proxy/internal/types"
 )
+
+// Store — хранилище пар для маскирования/демаскирования. Позволяет подменить
+// in-memory кэш общим (Redis) для горизонтального масштабирования.
+type Store interface {
+	Get(key string) (types.SessionState, bool)
+	Set(key string, state types.SessionState)
+}
 
 func auditLog(payloadID string, detected []string) {
 	slog.Info("pd_masked",
@@ -31,7 +37,7 @@ type detector struct {
 }
 
 type Service struct {
-	cache          *cache.ShardedCache
+	cache          Store
 	detectors      []detector
 	reCard         *regexp.Regexp
 	reCardExpSlash *regexp.Regexp
@@ -67,7 +73,7 @@ var surnameSuffixes = []string{
 
 var patronymicSuffixes = []string{"ович", "евич", "овна", "евна", "инична", "ична"}
 
-func NewService(c *cache.ShardedCache) *Service {
+func NewService(c Store) *Service {
 	s := &Service{cache: c}
 
 	s.detectors = []detector{

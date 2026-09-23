@@ -20,8 +20,22 @@ import (
 func main() {
 	cfg := config.Load()
 
-	appCache := cache.NewShardedCache()
-	svc := service.NewService(appCache)
+	// Выбор хранилища: Redis (общее, для горизонтального масштабирования) или
+	// in-memory. При недоступности Redis — безопасный фолбэк на память.
+	var store service.Store
+	if cfg.CacheBackend == "redis" {
+		if rs, err := cache.NewRedisStore(cfg.RedisAddr); err != nil {
+			log.Printf("Redis (%s) недоступен: %v — используем in-memory кэш", cfg.RedisAddr, err)
+			store = cache.NewShardedCache()
+		} else {
+			log.Printf("Кэш: Redis %s", cfg.RedisAddr)
+			store = rs
+		}
+	} else {
+		store = cache.NewShardedCache()
+	}
+
+	svc := service.NewService(store)
 	svc.SetCompositeMasking(cfg.CompositeMasking)
 	handler := transporthttp.NewHandler(svc, cfg)
 	mc := metrics.New()

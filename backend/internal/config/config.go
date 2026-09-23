@@ -24,6 +24,10 @@ type Config struct {
 	// маскируются безусловно. При true они маскируются только если в тексте
 	// присутствует номер карты (CARD).
 	CompositeMasking bool
+	// CacheBackend: "memory" (по умолчанию, in-memory) или "redis" (общее
+	// хранилище для горизонтального масштабирования). RedisAddr — адрес Redis.
+	CacheBackend string
+	RedisAddr    string
 }
 
 // fileConfig — формат JSON-файла настроек систем.
@@ -35,8 +39,10 @@ type fileConfig struct {
 
 func Load() *Config {
 	cfg := &Config{
-		Port:    getenv("PORT", "8080"),
-		Systems: map[string]SystemRule{},
+		Port:         getenv("PORT", "8080"),
+		Systems:      map[string]SystemRule{},
+		CacheBackend: getenv("CACHE_BACKEND", "memory"),
+		RedisAddr:    getenv("REDIS_ADDR", "localhost:6379"),
 	}
 
 	// Файл настроек систем — опционален. Отсутствие/ошибка = безопасный дефолт

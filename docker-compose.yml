@@ -1,0 +1,40 @@
+# Горизонтальное масштабирование: несколько инстансов бэкенда за nginx,
+# общее состояние в Redis (демаскирующий запрос может попасть на любой инстанс).
+# Запуск:  docker compose up --build -d
+# Точка входа (балансировщик):  http://localhost:8080/process
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app1: &app
+    build: ./backend
+    environment:
+      CACHE_BACKEND: redis
+      REDIS_ADDR: redis:6379
+      PORT: "8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  app2:
+    <<: *app
+
+  app3:
+    <<: *app
+
+  lb:
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app1
+      - app2
+      - app3
