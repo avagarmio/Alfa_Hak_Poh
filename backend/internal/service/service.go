@@ -217,6 +217,7 @@ func expandInflections(base []string) []string {
 const (
 	StrategyToken     = "token"     // [FIO_1] — обратимо через mapping (по умолчанию)
 	StrategyAsterisks = "asterisks" // банковский стиль **** — восстановление из кэша
+	StrategySynthetic = "synthetic" // правдоподобные фейки (обратимо через mapping)
 )
 
 type ProcessOptions struct {
@@ -236,9 +237,12 @@ func (s *Service) Process(req types.ProcessRequest, opts ProcessOptions) string 
 		var masked string
 		var detected []string
 		var mapping map[string]string
-		if opts.Strategy == StrategyAsterisks {
+		switch opts.Strategy {
+		case StrategyAsterisks:
 			masked, detected = s.MaskAsterisks(req.Payload, opts.MaskTypes)
-		} else {
+		case StrategySynthetic:
+			masked, detected, mapping = s.MaskSynthetic(req.Payload, opts.MaskTypes)
+		default:
 			masked, detected, mapping = s.Mask(req.Payload, opts.MaskTypes)
 		}
 		s.cache.Set(req.PayloadID, types.SessionState{
@@ -274,12 +278,18 @@ func (s *Service) Demask(input string, mapping map[string]string) string {
 	if len(mapping) == 0 || input == "" {
 		return input
 	}
-	pairs := make([]string, 0, len(mapping)*2)
-	for placeholder, original := range mapping {
-		pairs = append(pairs, placeholder, original)
+	// Заменяем более длинные плейсхолдеры/фейки раньше коротких, чтобы короткий
+	// фейк (напр. CVV «123») не совпал с частью длинного (номер карты).
+	keys := make([]string, 0, len(mapping))
+	for k := range mapping {
+		keys = append(keys, k)
 	}
-	replacer := strings.NewReplacer(pairs...)
-	return replacer.Replace(input)
+	sort.Slice(keys, func(i, j int) bool { return len(keys[i]) > len(keys[j]) })
+	pairs := make([]string, 0, len(mapping)*2)
+	for _, k := range keys {
+		pairs = append(pairs, k, mapping[k])
+	}
+	return strings.NewReplacer(pairs...).Replace(input)
 }
 
 func allow(set map[string]struct{}, typ string) bool {
@@ -323,6 +333,160 @@ func (s *Service) Mask(input string, allowed map[string]struct{}) (string, []str
 	sb.WriteString(input[lastIdx:])
 
 	return sb.String(), detected, mapping
+}
+
+// MaskSynthetic заменяет ПД правдоподобными фейковыми значениями по типу.
+// Обратимость — через mapping (фейк -> оригинал). Фейки уникальны в пределах
+// запроса; для типов без генератора используется плейсхолдер [TYPE_N].
+func (s *Service) MaskSynthetic(input string, allowed map[string]struct{}) (string, []string, map[string]string) {
+	if input == "" {
+		return input, nil, nil
+	}
+
+	spans, detected := s.collectSpans(input, allowed)
+	if len(spans) == 0 {
+		return input, nil, nil
+	}
+
+	var sb strings.Builder
+	sb.Grow(len(input))
+
+	mapping := make(map[string]string)
+	counters := make(map[string]int)
+	used := make(map[string]bool)
+	lastIdx := 0
+
+	for _, span := range spans {
+		if span.Start < lastIdx {
+			continue
+		}
+		sb.WriteString(input[lastIdx:span.Start])
+
+		original := input[span.Start:span.End]
+		counters[span.Type]++
+		fake := s.synthValue(span.Type, original, counters[span.Type], used)
+		used[fake] = true
+		mapping[fake] = original
+
+		sb.WriteString(fake)
+		lastIdx = span.End
+	}
+	sb.WriteString(input[lastIdx:])
+
+	return sb.String(), detected, mapping
+}
+
+var (
+	synthLast  = []string{"Смирнов", "Кузнецов", "Попов", "Соколов", "Лебедев", "Козлов", "Новиков", "Морозов", "Волков", "Зайцев"}
+	synthFirst = []string{"Пётр", "Иван", "Сергей", "Алексей", "Дмитрий", "Николай", "Андрей", "Михаил", "Егор", "Роман"}
+	synthPatr  = []string{"Петрович", "Иванович", "Сергеевич", "Алексеевич", "Дмитриевич", "Николаевич"}
+	synthCity  = []string{"Кленовая", "Садовая", "Гагарина", "Мира", "Заречная", "Полевая", "Лесная", "Центральная"}
+)
+
+// synthValue генерирует уникальный правдоподобный фейк для типа typ.
+func (s *Service) synthValue(typ, original string, counter int, used map[string]bool) string {
+	for attempt := 0; ; attempt++ {
+		n := counter + attempt
+		var v string
+		switch typ {
+		case "FIO":
+			words := len(strings.Fields(original))
+			last := synthLast[n%len(synthLast)]
+			first := synthFirst[(n/len(synthLast))%len(synthFirst)]
+			switch {
+			case words <= 1:
+				v = last
+			case words == 2:
+				v = last + " " + first
+			default:
+				v = last + " " + first + " " + synthPatr[n%len(synthPatr)]
+			}
+		case "PHONE":
+			v = fmt.Sprintf("+7 9%02d %03d-%02d-%02d", n%100, (n*7)%1000, n%100, (n*3)%100)
+		case "EMAIL":
+			v = fmt.Sprintf("user%d@example.com", n)
+		case "CARD":
+			v = synthCard(n)
+		case "CARD_EXP":
+			v = fmt.Sprintf("%02d/%02d", n%12+1, 30+n%9)
+		case "CVV":
+			v = fmt.Sprintf("%03d", 100+n%900)
+		case "PIN":
+			v = fmt.Sprintf("%04d", 1000+n%9000)
+		case "DATE":
+			v = fmt.Sprintf("%02d.%02d.19%02d", n%28+1, n%12+1, 60+n%39)
+		case "PASSPORT":
+			v = fmt.Sprintf("%02d %02d %06d", 40+n%50, 10+n%89, (n*137)%1000000)
+		case "PASSPORT_INTL":
+			v = fmt.Sprintf("%02d %07d", 70+n%9, (n*911)%10000000)
+		case "SNILS":
+			v = fmt.Sprintf("%03d-%03d-%03d %02d", n%1000, (n*3)%1000, (n*7)%1000, n%100)
+		case "INN":
+			v = fmt.Sprintf("%012d", int64(n)*104729%1000000000000)
+		case "PASS_CODE":
+			v = fmt.Sprintf("%03d-%03d", n%1000, (n*5)%1000)
+		case "CARD_HOLDER":
+			v = []string{"IVAN PETROV", "PETR SMIRNOV", "SERGEI VOLKOV", "ROMAN KOZLOV"}[n%4]
+		case "ADDRESS":
+			if isAllDigits(original) {
+				v = fmt.Sprintf("%0*d", len(original), (n*7)%pow10(len(original)))
+			} else {
+				v = synthCity[n%len(synthCity)]
+			}
+		case "CITIZENSHIP":
+			v = []string{"РФ", "России", "Российской Федерации"}[n%3]
+		case "BIRTHPLACE":
+			v = []string{"Тула", "Рязань", "Калуга", "Тверь"}[n%4]
+		default:
+			// Нет генератора — обратимый плейсхолдер.
+			v = fmt.Sprintf("[%s_%d]", typ, counter)
+		}
+		if !used[v] {
+			return v
+		}
+	}
+}
+
+// synthCard генерирует валидный по Луну 16-значный номер из счётчика.
+func synthCard(n int) string {
+	base := fmt.Sprintf("4%014d", n%100000000000000) // 15 цифр (Visa-like)
+	full := base + strconv.Itoa(luhnCheckDigit(base))
+	return full[0:4] + " " + full[4:8] + " " + full[8:12] + " " + full[12:16]
+}
+
+func luhnCheckDigit(num string) int {
+	sum, alt := 0, true
+	for i := len(num) - 1; i >= 0; i-- {
+		d := int(num[i] - '0')
+		if alt {
+			if d *= 2; d > 9 {
+				d -= 9
+			}
+		}
+		sum += d
+		alt = !alt
+	}
+	return (10 - sum%10) % 10
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func pow10(n int) int {
+	p := 1
+	for i := 0; i < n && i < 9; i++ {
+		p *= 10
+	}
+	return p
 }
 
 func (s *Service) MaskAsterisks(input string, allowed map[string]struct{}) (string, []string) {

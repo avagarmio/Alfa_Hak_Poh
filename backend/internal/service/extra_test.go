@@ -81,6 +81,27 @@ func TestCardWithExpiryAndCvv(t *testing.T) {
 	}
 }
 
+func TestSyntheticStrategy(t *testing.T) {
+	s := NewService(cache.NewShardedCache())
+	orig := "Клиент Иванов Иван Иванович, тел +7 999 123-45-67, карта 4539 1488 0343 6467 12/26 cvv876"
+
+	masked := s.Process(types.ProcessRequest{Payload: orig, PayloadID: "syn"}, ProcessOptions{DemaskEnabled: true, Strategy: StrategySynthetic})
+	if masked == orig {
+		t.Fatalf("synthetic не изменил текст")
+	}
+	if strings.Contains(masked, "Иванов Иван") || strings.Contains(masked, "4539 1488 0343 6467") {
+		t.Errorf("synthetic не заменил ПД: %q", masked)
+	}
+	// Правдоподобно: нет плейсхолдеров-скобок для покрытых типов.
+	if strings.Contains(masked, "[FIO_") {
+		t.Errorf("synthetic не должен давать [FIO_*]: %q", masked)
+	}
+	back := s.Process(types.ProcessRequest{Payload: masked, PayloadID: "syn"}, ProcessOptions{DemaskEnabled: true, Strategy: StrategySynthetic})
+	if back != orig {
+		t.Errorf("synthetic demask != orig:\n  want %q\n  got  %q", orig, back)
+	}
+}
+
 func TestStrategySelection(t *testing.T) {
 	orig := "Клиент Иванов Иван, тел +7 999 123-45-67"
 
