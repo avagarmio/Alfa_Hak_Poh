@@ -61,7 +61,7 @@ func NewService(c *cache.ShardedCache) *Service {
 
 		// Паспорт
 		{re: regexp.MustCompile(`(?i)(?:паспорт\s*(?:рф)?[^\d]*?)?(\b\d{2}\s*\d{2}\s*\d{6}\b)`), typ: "PASSPORT", groups: []int{1}},
-		{re: regexp.MustCompile(`(?i)серия\D{0,4}(\d{2}\s*\d{2})\D{0,10}(\d{6,7}|\d{3}\s\d{3,4})\b`), typ: "PASSPORT", groups: []int{1, 2}},
+		{re: regexp.MustCompile(`(?i)сери[ияей]\D{0,4}(\d{2}\s*\d{2})\D{0,10}(?:номер|№)?\s*(\d{6,7}|\d{3}\s\d{3,4})\b`), typ: "PASSPORT", groups: []int{1, 2}},
 		{re: regexp.MustCompile(`(?i)(?:паспорт|сери[а-яё]|документ)\D{0,25}(?:номер|№)\s*(\d{6,7})\b`), typ: "PASSPORT", groups: []int{1}},
 		{re: regexp.MustCompile(`\b\d{3}-\d{3}\b`), typ: "PASS_CODE"},
 		{re: regexp.MustCompile(`(?i)выдан[оаы]?\s+((?:[а-яё]+\s+){0,2}(?:Р[ОУ]ВД|ОВД|ОВМ|У?МВД|ГУВД|ГУ\s?МВД|О?УФМС|ТП)(?:\s+[а-яё]+){0,2})`), typ: "PASS_AUTHORITY", groups: []int{1}},
@@ -89,7 +89,7 @@ func NewService(c *cache.ShardedCache) *Service {
 		{re: regexp.MustCompile(`(?i)индекс\s*[:\-]?\s*(\d{6})`), typ: "ADDRESS", groups: []int{1}},
 		{re: regexp.MustCompile(`\b(\d{6})\s*,\s*(?:г\.|город|обл)`), typ: "ADDRESS", groups: []int{1}},
 		{re: regexp.MustCompile(`(?i)страна\s*[:\-]?\s*([А-ЯЁ][а-яё]+)`), typ: "ADDRESS", groups: []int{1}},
-		{re: regexp.MustCompile(`(?i)(?:г\.|город)\s*([А-ЯЁ][а-яё\-]+)`), typ: "ADDRESS", groups: []int{1}},
+		{re: regexp.MustCompile(`(?i)(?:^|[\s,;:(])(?:г\.\s*|город[а-яё]*\s+)([А-ЯЁ][а-яё\-]+)`), typ: "ADDRESS", groups: []int{1}},
 		{re: regexp.MustCompile(`(?i)(?:ул\.|улица|пр-?кт\.?|проспект|пер\.|переулок|б-р|бульвар|ш\.|шоссе|наб\.|набережная)\s*([^\n,;]{2,40})`), typ: "ADDRESS", groups: []int{1}},
 		{re: regexp.MustCompile(`(?i)(?:д\.|дом)\s*(\d+[а-яё]?(?:/\d+)?)`), typ: "ADDRESS", groups: []int{1}},
 		{re: regexp.MustCompile(`(?i)(?:кв\.|квартира)\s*(\d+)`), typ: "ADDRESS", groups: []int{1}},
