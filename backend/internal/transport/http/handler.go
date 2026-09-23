@@ -19,12 +19,34 @@ import (
 var openapiSpec []byte
 
 type Handler struct {
-	svc *service.Service
-	cfg *config.Config
+	svc   *service.Service
+	store *config.Store
 }
 
-func NewHandler(svc *service.Service, cfg *config.Config) *Handler {
-	return &Handler{svc: svc, cfg: cfg}
+func NewHandler(svc *service.Service, store *config.Store) *Handler {
+	return &Handler{svc: svc, store: store}
+}
+
+// ConfigGet отдаёт текущую (live) конфигурацию правил.
+func (h *Handler) ConfigGet(c *gin.Context) {
+	snap := h.store.Snapshot()
+	c.JSON(http.StatusOK, config.Editable{
+		AuthEnabled:      snap.AuthEnabled,
+		CompositeMasking: snap.CompositeMasking,
+		Systems:          snap.Systems,
+	})
+}
+
+// ConfigPut обновляет правила в рантайме (глобальные флаги + системы).
+func (h *Handler) ConfigPut(c *gin.Context) {
+	var e config.Editable
+	if err := c.ShouldBindJSON(&e); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid config body"})
+		return
+	}
+	h.store.Apply(e)
+	h.svc.SetCompositeMasking(e.CompositeMasking) // синхронизируем сервис
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (h *Handler) Process(c *gin.Context) {
@@ -47,11 +69,11 @@ func (h *Handler) Process(c *gin.Context) {
 // resolveOptions определяет правила обработки по заголовку X-System-ID.
 // При выключенном контроле доступа (по умолчанию) — маскируем всё, демаск включён.
 func (h *Handler) resolveOptions(c *gin.Context) (service.ProcessOptions, bool) {
-	if !h.cfg.AuthEnabled {
+	if !h.store.AuthEnabled() {
 		return service.DefaultOptions(), true
 	}
 
-	rule, exists := h.cfg.Systems[c.GetHeader("X-System-ID")]
+	rule, exists := h.store.System(c.GetHeader("X-System-ID"))
 	if !exists || !rule.Enabled {
 		return service.ProcessOptions{}, false
 	}
@@ -82,10 +104,14 @@ func SetupRouter(h *Handler, m *metrics.Metrics) *gin.Engine {
 		c.Data(http.StatusOK, "application/yaml; charset=utf-8", openapiSpec)
 	})
 
+	// Live-конфигуратор правил (вне rate limit).
+	r.GET("/config", h.ConfigGet)
+	r.PUT("/config", h.ConfigPut)
+
 	r.Use(MetricsMiddleware(m))
 	r.Use(RateLimitMiddleware())
 
-	r.POST("/process", CircuitGuardMiddleware(h.cfg.MaxConsecutiveErrors), h.Process)
+	r.POST("/process", CircuitGuardMiddleware(h.store.Snapshot().MaxConsecutiveErrors), h.Process)
 
 	frontendDir := "frontend_dist"
 	if _, err := os.Stat(frontendDir); err == nil {

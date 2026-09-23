@@ -56,6 +56,31 @@ paths:
               description: Через сколько секунд повторить запрос
         "500":
           description: Внутренняя ошибка сервиса
+  /config:
+    get:
+      operationId: getConfig
+      summary: Текущие (live) правила систем-потребителей
+      responses:
+        "200":
+          description: Конфигурация
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+    put:
+      operationId: putConfig
+      summary: Обновить правила в рантайме (глобальные флаги + системы)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Config"
+      responses:
+        "200":
+          description: Применено
+        "400":
+          description: Невалидное тело
   /metrics:
     get:
       operationId: metrics
@@ -89,3 +114,29 @@ components:
           type: string
           description: Результат обработки.
           example: "Клиент [FIO_1], паспорт [PASSPORT_1]"
+    SystemRule:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        mask_types:
+          type: array
+          items:
+            type: string
+          description: Типы ПД для маскирования; пустой список = все типы.
+        demask_enabled:
+          type: boolean
+        strategy:
+          type: string
+          enum: [token, asterisks, synthetic]
+    Config:
+      type: object
+      properties:
+        auth_enabled:
+          type: boolean
+        composite_masking:
+          type: boolean
+        systems:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SystemRule"
