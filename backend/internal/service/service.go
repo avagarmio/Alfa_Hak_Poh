@@ -98,6 +98,8 @@ func NewService(c *cache.ShardedCache) *Service {
 
 		// Реквизиты карты
 		{re: regexp.MustCompile(`(?i)(?:cvv|cvc|код)[^\d]{1,5}(\b\d{3}\b)`), typ: "CVV", groups: []int{1}},
+		// CVV без ключевого слова: 3 цифры сразу после срока действия (MM/YY 876)
+		{re: regexp.MustCompile(`(?:0[1-9]|1[0-2])[./\-]\d{2,4}\s+(\d{3})\b`), typ: "CVV", groups: []int{1}},
 		{re: regexp.MustCompile(`(?i)(?:пин|pin)(?:[\s\-]?код)?[^\d]{0,12}(\b\d{4}\b)`), typ: "PIN", groups: []int{1}},
 		{re: regexp.MustCompile(`\b([A-Z]{2,}\s+[A-Z]{2,}(?:\s+[A-Z]{2,})?)\b`), typ: "CARD_HOLDER", groups: []int{1}},
 
@@ -375,8 +377,13 @@ func (s *Service) collectSpans(input string, allowed map[string]struct{}) ([]typ
 
 	if allow(allowed, "CARD") {
 		for _, match := range s.reCard.FindAllStringIndex(input, -1) {
-			if isValidLuhn(input[match[0]:match[1]]) {
+			seg := input[match[0]:match[1]]
+			if isValidLuhn(seg) {
 				spans = append(spans, types.Span{Start: match[0], End: match[1], Type: "CARD"})
+			} else if end, ok := longestLuhnCard(seg); ok {
+				// Жадный матч мог прихватить лишние цифры (напр. месяц из «12/36»)
+				// — маскируем самый длинный валидный по Луну префикс.
+				spans = append(spans, types.Span{Start: match[0], End: match[0] + end, Type: "CARD"})
 			}
 		}
 	}
@@ -773,6 +780,46 @@ func isFutureExpiry(mm, yy int, now time.Time) bool {
 		return yy > now.Year()
 	}
 	return mm >= int(now.Month())
+}
+
+// longestLuhnCard возвращает байтовую длину самого длинного валидного по Луну
+// префикса карты внутри seg (только цифры/пробелы/дефисы). Нужно, когда жадный
+// матч прихватил соседние цифры (срок действия и т.п.).
+func longestLuhnCard(seg string) (int, bool) {
+	digits := make([]int, 0, len(seg))
+	ends := make([]int, 0, len(seg))
+	for i := 0; i < len(seg); i++ {
+		if b := seg[i]; b >= '0' && b <= '9' {
+			digits = append(digits, int(b-'0'))
+			ends = append(ends, i+1)
+		}
+	}
+	maxL := len(digits)
+	if maxL > 19 {
+		maxL = 19
+	}
+	for L := maxL; L >= 13; L-- {
+		if luhnOnDigits(digits[:L]) {
+			return ends[L-1], true
+		}
+	}
+	return 0, false
+}
+
+func luhnOnDigits(ds []int) bool {
+	sum := 0
+	alt := false
+	for i := len(ds) - 1; i >= 0; i-- {
+		n := ds[i]
+		if alt {
+			if n *= 2; n > 9 {
+				n -= 9
+			}
+		}
+		sum += n
+		alt = !alt
+	}
+	return sum%10 == 0
 }
 
 func isValidLuhn(number string) bool {

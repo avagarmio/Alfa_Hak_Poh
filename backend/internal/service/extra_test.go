@@ -64,6 +64,23 @@ func TestCompositeMasking(t *testing.T) {
 	}
 }
 
+func TestCardWithExpiryAndCvv(t *testing.T) {
+	s := NewService(cache.NewShardedCache())
+	// Карта + срок + CVV одной строкой (без ключевых слов).
+	_, detected, _ := s.Mask("2200 1536 9983 8182 12/36 876", nil)
+	for _, want := range []string{"CARD", "CARD_EXP", "CVV"} {
+		found := false
+		for _, d := range detected {
+			if d == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("ожидался тип %s, получено %v", want, detected)
+		}
+	}
+}
+
 func TestStrategySelection(t *testing.T) {
 	orig := "Клиент Иванов Иван, тел +7 999 123-45-67"
 
