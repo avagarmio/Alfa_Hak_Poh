@@ -37,7 +37,8 @@ func main() {
 
 	svc := service.NewService(store)
 	svc.SetCompositeMasking(cfg.CompositeMasking)
-	handler := transporthttp.NewHandler(svc, cfg)
+	cfgStore := config.NewStore(cfg)
+	handler := transporthttp.NewHandler(svc, cfgStore)
 	mc := metrics.New()
 	router := transporthttp.SetupRouter(handler, mc)
 
