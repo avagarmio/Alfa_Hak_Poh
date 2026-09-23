@@ -12,24 +12,19 @@ info:
         сервис возвращает исходный текст.
     Идемпотентность по payload_id обязательна (до 3 попыток на запрос).
 servers:
-  - url: http://localhost:8080
-    description: Локальный запуск
-  - url: https://your-solution.example.com
-    description: HTTPS (self-signed допускается, проверка с ssl_verify=false)
+  - url: /
+    description: Текущий хост
+  - url: https://pd-security.72-56-67-31.sslip.io:8444
+    description: Dev стенд
+
 paths:
   /process:
     post:
       operationId: process
       summary: Маскирование/демаскирование строки (корреляция по payload_id)
-      parameters:
-        - in: header
-          name: X-System-ID
-          required: false
-          schema:
-            type: string
-          description: >
-            Идентификатор системы-потребителя. Требуется только при включённом
-            контроле доступа (auth_enabled=true); иначе игнорируется.
+      security:
+        - SystemIdAuth: []
+        - {} 
       requestBody:
         required: true
         content:
@@ -45,21 +40,44 @@ paths:
                 $ref: "#/components/schemas/ProcessResponse"
         "400":
           description: Невалидное тело запроса (нет payload или payload_id)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "403":
           description: Система-потребитель не зарегистрирована или отключена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
-          description: Слишком много запросов. Возвращается заголовок Retry-After.
+          description: Слишком много запросов
           headers:
             Retry-After:
               schema:
                 type: integer
               description: Через сколько секунд повторить запрос
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Внутренняя ошибка сервиса
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Сервис временно недоступен (сработал Circuit Breaker)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /metrics:
     get:
       operationId: metrics
-      summary: Технические метрики в формате Prometheus (Latency/RPS/TPS)
+      summary: Технические метрики в формате Prometheus
       responses:
         "200":
           description: Метрики
@@ -67,25 +85,50 @@ paths:
             text/plain:
               schema:
                 type: string
+
 components:
+  securitySchemes:
+    SystemIdAuth:
+      type: apiKey
+      in: header
+      name: X-System-ID
+      description: Идентификатор системы-потребителя (требуется при auth_enabled=true).
+
   schemas:
     ProcessRequest:
       type: object
-      required: [payload, payload_id]
+      required:
+        - payload
+        - payload_id
       properties:
         payload:
           type: string
+          minLength: 1
           description: Исходная строка (шаг 1) либо ранее замаскированная (шаг 2).
           example: "Клиент Иванов Иван Иванович, паспорт 4509 123456"
         payload_id:
           type: string
+          minLength: 1
+          maxLength: 128
           description: Идентификатор корреляции пары маскирование/демаскирование.
           example: "8a77d363c7c044b49b41d7b8a448243a"
+
     ProcessResponse:
       type: object
-      required: [result]
+      required:
+        - result
       properties:
         result:
           type: string
           description: Результат обработки.
           example: "Клиент [FIO_1], паспорт [PASSPORT_1]"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Текстовое описание ошибки.
+          example: "invalid payload or payload_id"
