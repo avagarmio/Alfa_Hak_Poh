@@ -5,7 +5,9 @@ import (
 	"log/slog"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -32,6 +34,8 @@ type Service struct {
 	cache          *cache.ShardedCache
 	detectors      []detector
 	reCard         *regexp.Regexp
+	reCardExpSlash *regexp.Regexp
+	reCardExpCtx   *regexp.Regexp
 	reFIO          *regexp.Regexp
 	reFIOInitialsL *regexp.Regexp
 	reFIOInitialsR *regexp.Regexp
@@ -99,6 +103,13 @@ func NewService(c *cache.ShardedCache) *Service {
 	}
 
 	s.reCard = regexp.MustCompile(`\b\d(?:[ -]?\d){12,18}\b`)
+
+	// Срок действия карты MM/YY. Слэш — сильный признак карты (без контекста);
+	// точка/дефис — только рядом с карточным словом. Валидность (текущий месяц
+	// или будущее) проверяется в isFutureExpiry.
+	s.reCardExpSlash = regexp.MustCompile(`\b(0[1-9]|1[0-2])/(\d{2}|\d{4})\b`)
+	s.reCardExpCtx = regexp.MustCompile(`(?i)(?:срок|действ|годн|карт[аеыой]|valid|expir|thru)\D{0,20}?(0[1-9]|1[0-2])[.\-/](\d{2}|\d{4})\b`)
+
 	s.reFIO = regexp.MustCompile(`([А-ЯЁ][а-яё]+)\s+([А-ЯЁ][а-яё]+)(?:\s+([А-ЯЁ][а-яё]+))?(?:\s+([А-ЯЁ][а-яё]+))?`)
 	s.reFIOInitialsL = regexp.MustCompile(`[А-ЯЁ][а-яё]+\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.`)
 	s.reFIOInitialsR = regexp.MustCompile(`[А-ЯЁ]\.\s?[А-ЯЁ]\.\s?[А-ЯЁ][а-яё]+`)
@@ -326,6 +337,20 @@ func (s *Service) collectSpans(input string, allowed map[string]struct{}) ([]typ
 		for _, match := range s.reCard.FindAllStringIndex(input, -1) {
 			if isValidLuhn(input[match[0]:match[1]]) {
 				spans = append(spans, types.Span{Start: match[0], End: match[1], Type: "CARD"})
+			}
+		}
+	}
+
+	// Срок действия карты — только валидные (текущий месяц/будущее)
+	if allow(allowed, "CARD_EXP") {
+		now := time.Now()
+		for _, re := range []*regexp.Regexp{s.reCardExpSlash, s.reCardExpCtx} {
+			for _, m := range re.FindAllStringSubmatchIndex(input, -1) {
+				mm, _ := strconv.Atoi(input[m[2]:m[3]])
+				yy, _ := strconv.Atoi(input[m[4]:m[5]])
+				if isFutureExpiry(mm, yy, now) {
+					spans = append(spans, types.Span{Start: m[2], End: m[5], Type: "CARD_EXP"})
+				}
 			}
 		}
 	}
@@ -655,6 +680,21 @@ func mergeSpans(spans []types.Span) []types.Span {
 		}
 	}
 	return merged
+}
+
+// isFutureExpiry проверяет, что срок действия (MM, YY|YYYY) — текущий месяц или
+// будущее. Двузначный год трактуется как 20YY. Просроченные/невалидные — нет.
+func isFutureExpiry(mm, yy int, now time.Time) bool {
+	if mm < 1 || mm > 12 {
+		return false
+	}
+	if yy < 100 {
+		yy += 2000
+	}
+	if yy != now.Year() {
+		return yy > now.Year()
+	}
+	return mm >= int(now.Month())
 }
 
 func isValidLuhn(number string) bool {
