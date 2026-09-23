@@ -10,6 +10,7 @@ type SystemRule struct {
 	Enabled       bool     `json:"enabled"`        // доступ системы включён
 	MaskTypes     []string `json:"mask_types"`     // какие типы ПД маскировать; пусто = все
 	DemaskEnabled bool     `json:"demask_enabled"` // разрешено ли демаскирование
+	Strategy      string   `json:"strategy"`       // "token" (по умолчанию) или "asterisks"
 }
 
 type Config struct {

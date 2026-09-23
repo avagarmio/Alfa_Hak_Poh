@@ -70,6 +70,11 @@ func NewService(c *cache.ShardedCache) *Service {
 		{re: regexp.MustCompile(`\b\d{3}-\d{3}\b`), typ: "PASS_CODE"},
 		{re: regexp.MustCompile(`(?i)выдан[оаы]?\s+((?:[а-яё]+\s+){0,2}(?:Р[ОУ]ВД|ОВД|ОВМ|У?МВД|ГУВД|ГУ\s?МВД|О?УФМС|ТП)(?:\s+[а-яё]+){0,2})`), typ: "PASS_AUTHORITY", groups: []int{1}},
 
+		// Доп. удостоверения личности: загранпаспорт (серия 2 + номер 7) и СНИЛС
+		{re: regexp.MustCompile(`(?i)загран\p{L}*\D{0,20}?(\d{2})\s*(?:№|номер)?\s*(\d{7})\b`), typ: "PASSPORT_INTL", groups: []int{1, 2}},
+		{re: regexp.MustCompile(`(?i)снилс\D{0,10}(\d{3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{2})`), typ: "SNILS", groups: []int{1}},
+		{re: regexp.MustCompile(`\b\d{3}-\d{3}-\d{3}\s\d{2}\b`), typ: "SNILS"},
+
 		// Даты
 		{re: regexp.MustCompile(`\b(?:\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}[./-]\d{1,2}[./-]\d{1,2})\b`), typ: "DATE"},
 		{re: regexp.MustCompile(`(?i)\b\d{1,2}\s+(?:янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек)[а-яё]*\.?\s+\d{2,4}(?:\s*г(?:ода|\.)?)?`), typ: "DATE"},
@@ -194,20 +199,34 @@ func expandInflections(base []string) []string {
 	return out
 }
 
+// Стратегии маскирования на уровне системы-потребителя.
+const (
+	StrategyToken     = "token"     // [FIO_1] — обратимо через mapping (по умолчанию)
+	StrategyAsterisks = "asterisks" // банковский стиль **** — восстановление из кэша
+)
+
 type ProcessOptions struct {
 	MaskTypes     map[string]struct{}
 	DemaskEnabled bool
+	Strategy      string // "" == StrategyToken
 }
 
 func DefaultOptions() ProcessOptions {
-	return ProcessOptions{MaskTypes: nil, DemaskEnabled: true}
+	return ProcessOptions{MaskTypes: nil, DemaskEnabled: true, Strategy: StrategyToken}
 }
 
 func (s *Service) Process(req types.ProcessRequest, opts ProcessOptions) string {
 	state, exists := s.cache.Get(req.PayloadID)
 
 	if !exists {
-		masked, detected, mapping := s.Mask(req.Payload, opts.MaskTypes)
+		var masked string
+		var detected []string
+		var mapping map[string]string
+		if opts.Strategy == StrategyAsterisks {
+			masked, detected = s.MaskAsterisks(req.Payload, opts.MaskTypes)
+		} else {
+			masked, detected, mapping = s.Mask(req.Payload, opts.MaskTypes)
+		}
 		s.cache.Set(req.PayloadID, types.SessionState{
 			OriginalText: req.Payload,
 			MaskedText:   masked,
@@ -217,14 +236,23 @@ func (s *Service) Process(req types.ProcessRequest, opts ProcessOptions) string 
 		return masked
 	}
 
+	// Идемпотентный ретрай прямого шага
 	if req.Payload == state.OriginalText {
 		return state.MaskedText
 	}
 
-	if !opts.DemaskEnabled || len(state.Mapping) == 0 {
+	// Обратный шаг (демаскирование)
+	if !opts.DemaskEnabled {
 		return req.Payload
 	}
-
+	if len(state.Mapping) == 0 {
+		// Стратегия без mapping (звёздочки): восстанавливаем оригинал из кэша,
+		// когда пришла ранее выданная маска.
+		if req.Payload == state.MaskedText {
+			return state.OriginalText
+		}
+		return req.Payload
+	}
 	return s.Demask(req.Payload, state.Mapping)
 }
 

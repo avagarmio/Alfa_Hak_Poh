@@ -59,7 +59,11 @@ func (h *Handler) resolveOptions(c *gin.Context) (service.ProcessOptions, bool) 
 			maskTypes[t] = struct{}{}
 		}
 	}
-	return service.ProcessOptions{MaskTypes: maskTypes, DemaskEnabled: rule.DemaskEnabled}, true
+	return service.ProcessOptions{
+		MaskTypes:     maskTypes,
+		DemaskEnabled: rule.DemaskEnabled,
+		Strategy:      rule.Strategy,
+	}, true
 }
 
 func SetupRouter(h *Handler, m *metrics.Metrics) *gin.Engine {
