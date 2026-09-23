@@ -87,6 +87,8 @@ func NewService(c Store) *Service {
 		{re: regexp.MustCompile(`(?i)(?:паспорт|сери[а-яё]|документ)\D{0,25}(?:номер|№)\s*(\d{6,7})\b`), typ: "PASSPORT", groups: []int{1}},
 		{re: regexp.MustCompile(`\b\d{3}-\d{3}\b`), typ: "PASS_CODE"},
 		{re: regexp.MustCompile(`(?i)выдан[оаы]?\s+((?:[а-яё]+\s+){0,2}(?:Р[ОУ]ВД|ОВД|ОВМ|У?МВД|ГУВД|ГУ\s?МВД|О?УФМС|ТП)(?:\s+[а-яё]+){0,2})`), typ: "PASS_AUTHORITY", groups: []int{1}},
+		// Орган и без слова «выдан»: аббревиатура + опц. «России/РФ» (напр. «МВД РОССИИ»)
+		{re: regexp.MustCompile(`(?i)(?:^|[\s\d,.:;(])((?:ГУ\s?МВД|У?МВД|Р[ОУ]ВД|ОВД|ОВМ|ГУВД|О?УФМС|ТП)(?:\s+(?:росси[ий]|рф))?)`), typ: "PASS_AUTHORITY", groups: []int{1}},
 
 		// Доп. удостоверения личности: загранпаспорт (серия 2 + номер 7) и СНИЛС
 		{re: regexp.MustCompile(`(?i)загран\p{L}*\D{0,20}?(\d{2})\s*(?:№|номер)?\s*(\d{7})\b`), typ: "PASSPORT_INTL", groups: []int{1, 2}},
