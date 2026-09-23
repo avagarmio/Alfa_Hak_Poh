@@ -45,7 +45,19 @@ type Service struct {
 	givenNames     map[string]struct{}
 	commonNouns    map[string]struct{}
 	weakStop       map[string]struct{}
+	composite      bool // составное маскирование: условные типы требуют якоря
 }
+
+// compositeRules — условные типы и их «якоря»: тип маскируется только если в
+// тексте есть хотя бы один якорь. Применяется лишь при включённом composite.
+var compositeRules = map[string][]string{
+	"PIN":      {"CARD"},
+	"CVV":      {"CARD"},
+	"CARD_EXP": {"CARD"},
+}
+
+// SetCompositeMasking включает/выключает составное маскирование.
+func (s *Service) SetCompositeMasking(on bool) { s.composite = on }
 
 var surnameSuffixes = []string{
 	"ова", "ева", "ёва", "ина", "ына", "ская", "цкая",
@@ -388,6 +400,10 @@ func (s *Service) collectSpans(input string, allowed map[string]struct{}) ([]typ
 		spans = append(spans, s.findFIOMorph(input)...)
 	}
 
+	if s.composite {
+		spans = s.filterComposite(input, spans)
+	}
+
 	if len(spans) == 0 {
 		return nil, nil
 	}
@@ -395,6 +411,40 @@ func (s *Service) collectSpans(input string, allowed map[string]struct{}) ([]typ
 	detected := uniqueTypes(spans)
 	spans = mergeSpans(spans)
 	return spans, detected
+}
+
+var reCardWord = regexp.MustCompile(`(?i)карт[аеыуой]`)
+
+// filterComposite убирает спаны условных типов, у которых в тексте нет якоря
+// (напр. PIN без CARD). Проверка на уровне всего текста, не по близости.
+// Якорь CARD считается присутствующим при валидной карте, любом карто-подобном
+// номере (13–19 цифр) или слове «карт…» — чтобы не терять маску из-за невалидной
+// по Луну карты.
+func (s *Service) filterComposite(input string, spans []types.Span) []types.Span {
+	present := make(map[string]bool, len(spans))
+	for _, sp := range spans {
+		present[sp.Type] = true
+	}
+	if !present["CARD"] && (s.reCard.MatchString(input) || reCardWord.MatchString(input)) {
+		present["CARD"] = true
+	}
+	out := spans[:0]
+	for _, sp := range spans {
+		if anchors, ok := compositeRules[sp.Type]; ok {
+			keep := false
+			for _, a := range anchors {
+				if present[a] {
+					keep = true
+					break
+				}
+			}
+			if !keep {
+				continue
+			}
+		}
+		out = append(out, sp)
+	}
+	return out
 }
 
 type fioToken struct {

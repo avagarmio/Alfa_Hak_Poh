@@ -1,15 +1,18 @@
 {
   "auth_enabled": false,
+  "composite_masking": false,
   "systems": {
     "system-a": {
       "enabled": true,
       "mask_types": [],
-      "demask_enabled": true
+      "demask_enabled": true,
+      "strategy": "token"
     },
     "billing": {
       "enabled": true,
       "mask_types": ["CARD", "CVV", "PIN", "CARD_HOLDER", "PHONE", "EMAIL"],
-      "demask_enabled": true
+      "demask_enabled": true,
+      "strategy": "asterisks"
     },
     "analytics": {
       "enabled": true,

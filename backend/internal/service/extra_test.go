@@ -34,6 +34,36 @@ func TestExtraDocsDetection(t *testing.T) {
 	}
 }
 
+func TestCompositeMasking(t *testing.T) {
+	has := func(detected []string, typ string) bool {
+		for _, d := range detected {
+			if d == typ {
+				return true
+			}
+		}
+		return false
+	}
+
+	// composite=off: пин маскируется всегда.
+	off := NewService(cache.NewShardedCache())
+	if _, d, _ := off.Mask("введите пин-код 1234", nil); !has(d, "PIN") {
+		t.Errorf("composite off: PIN должен маскироваться в одиночку, получено %v", d)
+	}
+
+	// composite=on: пин без карты — не маскируется; с картой (даже словом) — да.
+	on := NewService(cache.NewShardedCache())
+	on.SetCompositeMasking(true)
+	if _, d, _ := on.Mask("введите пин-код 1234", nil); has(d, "PIN") {
+		t.Errorf("composite on: PIN без карты не должен маскироваться, получено %v", d)
+	}
+	if _, d, _ := on.Mask("карта, пин-код 4321", nil); !has(d, "PIN") {
+		t.Errorf("composite on: PIN при наличии карты должен маскироваться, получено %v", d)
+	}
+	if _, d, _ := on.Mask("оплата 5536913790312149 и пин 4321", nil); !has(d, "PIN") {
+		t.Errorf("composite on: PIN при карто-подобном номере должен маскироваться, получено %v", d)
+	}
+}
+
 func TestStrategySelection(t *testing.T) {
 	orig := "Клиент Иванов Иван, тел +7 999 123-45-67"
 

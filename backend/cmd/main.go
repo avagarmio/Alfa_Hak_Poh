@@ -22,6 +22,7 @@ func main() {
 
 	appCache := cache.NewShardedCache()
 	svc := service.NewService(appCache)
+	svc.SetCompositeMasking(cfg.CompositeMasking)
 	handler := transporthttp.NewHandler(svc, cfg)
 	mc := metrics.New()
 	router := transporthttp.SetupRouter(handler, mc)
